@@ -38,7 +38,6 @@ This repository is organized as a collection of ROS2 Humble packages within a `s
 ### System Dependencies
 * **Ubuntu 22.04**
 * **ROS2 Humble Hawksbill**: The core robotics middleware.
-* **Intel RealSense SDK 2.0**: Must be installed before building the ROS wrapper. Follow the official installation guide.
 * **Intel RealSense ROS2 Wrapper**: The ROS2 driver for RealSense cameras.
 * **ros-humble-cv-bridge**: ROS package to convert between ROS Image messages and OpenCV images.
 
