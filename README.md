@@ -50,7 +50,7 @@ This repository is organized as a collection of ROS2 Humble packages within a `s
 
 ## Usage
 
-To run the full system, you can use the provided launch files.
+To run the full system, you can use the provided files.
 
 ```bash
 ros2 run boeing_vision normal_estimator.py
@@ -67,7 +67,7 @@ If you use this work in your research, please cite the original paper:
   title     = {Learning Rock Pushability on Rough Planetary Terrain},
   booktitle = {2025 IEEE International Conference on Robotics and Automation (ICRA) Workshop on Field Robotics},
   year      = {2025},
-  address   = {Daytona Beach, FL, USA},
+  address   = {Atlanta, GA, USA},
   publisher = {IEEE}
 }
 ```
