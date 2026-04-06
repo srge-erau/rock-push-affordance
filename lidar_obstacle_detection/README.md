@@ -35,7 +35,9 @@ ros2 run lidar_obstacle_detection lidar_cloud_ingress --ros-args \
   --params-file /path/to/your.yaml
 ```
 
-The YAML documents groups: logging, topics, spatial filter, temporal merge, static TF (visualization), perception (normals / DBSCAN / obstacle outputs), QoS, and RViz marker sizing.
+The YAML documents groups: logging, topics, spatial filter, temporal merge, static TF (visualization), perception (normals / DBSCAN / obstacle outputs, YZ depth smoothing, optional segmented-cloud depth shading), QoS, and RViz marker sizing.
+
+**Forward depth and smoothing (`base_link`):** With +X forward, the robot-facing side of an obstacle corresponds to **smaller X**. Per DBSCAN cluster, the library bins points in the **Y–Z plane**, assigns a low **percentile of X** per bin when enough points fall in that bin, and picks the **closest surface** as a real point from the bin with the smallest robust X. Parameters: **`yz_depth_bin_size_m`**, **`yz_depth_min_points`**, **`yz_depth_percentile`** (see YAML). If **`yz_depth_bin_size_m <= 0`**, behavior falls back to the raw minimum-X point. **`perception_segmented_cloud_depth_shading`**: when true (and the colored segmented cloud is published), obstacle hues stay per-cluster but **brightness** reflects smoothed forward X (**closer → brighter**). **`publish_closest_surface_markers`**: with obstacle markers enabled, adds **SPHERE** markers (namespace `lidar_obstacle_closest_surface`) at each obstacle’s `closest_surface_point`.
 
 ---
 
@@ -76,8 +78,8 @@ Perception publishers are **created lazily** the first time they are needed: if 
 | Default topic | Type | Role |
 |---------------|------|------|
 | `/lidar_obstacle_detection/cloud_segmented` | `sensor_msgs/PointCloud2` | Colored cloud by cluster (`publish_colored_segmented_cloud`). |
-| `/lidar_obstacle_detection/obstacle_markers` | `visualization_msgs/MarkerArray` | AABB + surface-normal arrows (`publish_obstacle_markers`). |
-| `/lidar_obstacle_detection/obstacle_list` | `lidar_obstacle_detection_msgs/ObstacleList` | Obstacles + header (`publish_obstacle_list`). |
+| `/lidar_obstacle_detection/obstacle_markers` | `visualization_msgs/MarkerArray` | AABB + surface-normal arrows (`publish_obstacle_markers`); optional closest-surface spheres (`publish_closest_surface_markers`). |
+| `/lidar_obstacle_detection/obstacle_list` | `lidar_obstacle_detection_msgs/ObstacleList` | Obstacles + header (`publish_obstacle_list`); each obstacle includes `closest_surface_point` when valid. |
 
 Debug cloud + markers use `perception_debug_qos_*` (default **reliable** so RViz2’s default display QoS matches); `ObstacleList` uses `obstacle_list_qos_*`. If you use `best_effort` on the node, set each RViz display’s QoS to Best Effort as well.
 
@@ -112,9 +114,9 @@ Python package directory: `lidar_obstacle_detection/lidar_obstacle_detection/`.
 
 | Module | Role |
 |--------|------|
-| `surface_obstacle_segmentation.py` | Open3D normals, cosine split vs. dominant surface, DBSCAN; footprint ground normal; `build_xyz_rgba_pointcloud2` for debug cloud. |
-| `obstacle_ros_msgs.py` | Builds `ObstacleList` from internal `ObstacleDetection` dataclasses. |
-| `obstacle_rviz_markers.py` | Builds `MarkerArray` for boxes and normal arrows. |
+| `surface_obstacle_segmentation.py` | Open3D normals, cosine split vs. dominant surface, DBSCAN; footprint ground normal; YZ-binned closest surface + optional per-point smoothed X (`yz_binned_closest_and_smooth_x`); `build_xyz_rgba_pointcloud2` for debug cloud (optional depth shading). |
+| `obstacle_ros_msgs.py` | Builds `ObstacleList` from internal `ObstacleDetection` dataclasses (AABB, normals, `closest_surface_point`). |
+| `obstacle_rviz_markers.py` | Builds `MarkerArray` for boxes, normal arrows, and optional closest-surface spheres. |
 
 ### Cross-cutting
 
@@ -136,6 +138,7 @@ Python package directory: `lidar_obstacle_detection/lidar_obstacle_detection/`.
 | Path | Role |
 |------|------|
 | `test/test_flake8.py`, `test_pep257.py`, `test_copyright.py` | ament lint tests. |
+| `test/test_yz_binned_closest.py` | Unit tests for YZ-binned forward depth / closest-point helper. |
 
 ---
 

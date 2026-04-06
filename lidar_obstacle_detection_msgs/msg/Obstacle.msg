@@ -14,3 +14,7 @@ float32 volume
 # Surface normals under the obstacle XY footprint (dominant ground / plane).
 # Typically one entry: binned-median ground normal, unit length when valid.
 geometry_msgs/Vector3[] surface_normals
+
+# YZ-binned robust estimate of the forward-facing (minimum-X) surface point in the
+# same frame as position (e.g. base_link). NaN components when unavailable.
+geometry_msgs/Point closest_surface_point

@@ -4,7 +4,7 @@ Stack of two packages in this repository:
 
 | Package | Role |
 |--------|------|
-| [**`lidar_obstacle_detection`**](lidar_obstacle_detection/) | Node **`lidar_cloud_ingress`**: subscribe `PointCloud2`, rigid transform into the robot base frame, spatial filter + voxel, optional temporal merge, optional surface segmentation + DBSCAN → **`ObstacleList`** and debug topics. |
+| [**`lidar_obstacle_detection`**](lidar_obstacle_detection/) | Node **`lidar_cloud_ingress`**: subscribe `PointCloud2`, rigid transform into the robot base frame, spatial filter + voxel, optional temporal merge, optional surface segmentation + DBSCAN → **`ObstacleList`** (with YZ-smoothed **`closest_surface_point`**) and debug topics (optional depth-shaded segmented cloud, optional closest-point RViz spheres). |
 | [**`lidar_obstacle_detection_msgs`**](lidar_obstacle_detection_msgs/) | Message definitions (`Obstacle`, `ObstacleList`). |
 
 **Defaults** in [`lidar_obstacle_detection/config/lidar_cloud_ingress.yaml`](lidar_obstacle_detection/config/lidar_cloud_ingress.yaml) target a **Unitree Go2** setup: input cloud **`/utlidar/cloud`**, output in **`base_link`**, and mount extrinsics matching that robot. The published cloud is always expressed in `output_cloud_frame_id` (usually `base_link`). A static TF **`base_link` → `lidar_link`** is published only for visualization alignment in RViz; it does not change the point math.
@@ -66,14 +66,14 @@ Edit **`lidar_obstacle_detection/config/lidar_cloud_ingress.yaml`** (or a copy p
 | **`driver_cloud_to_lidar_link_xyz`**, **`driver_cloud_to_lidar_link_rpy_rad`** | Extra rigid step if the driver’s points are not already in the frame your URDF expects before the mount (often all zeros). |
 | **`publish_lidar_mount_static_tf`** | Set **`false`** if another node (e.g. `robot_state_publisher`) already publishes the same transform. |
 
-Then tune **`fov_deg`**, **`max_depth`**, **`voxel_size`**, **`temporal_*`**, and perception (**`dbscan_*`**, **`cosine_threshold`**, etc.) for your sensor density and environment.
+Then tune **`fov_deg`**, **`max_depth`**, **`voxel_size`**, **`temporal_*`**, and perception (**`dbscan_*`**, **`cosine_threshold`**, etc.) for your sensor density and environment. For forward depth in **`base_link`** (+X ahead), **`yz_depth_*`** parameters control YZ-bin smoothing of the minimum-X surface estimate; **`perception_segmented_cloud_depth_shading`** modulates segmented obstacle colors by that smoothed depth in RViz; **`publish_closest_surface_markers`** adds sphere markers at the chosen closest points (see the package README).
 
 ### 2. RViz (optional but typical)
 
 Saved config: **`lidar_obstacle_detection/rviz/lidar_ingress.rviz`**.
 
 - Set **Global Options → Fixed Frame** to your base frame (default **`base_link`**).
-- Point each display’s **Topic** at the names you set in YAML (`output_topic`, `colored_segmented_cloud_topic`, `obstacle_markers_topic`, etc., if you renamed them).
+- Point each display’s **Topic** at the names you set in YAML (`output_topic`, `colored_segmented_cloud_topic`, `obstacle_markers_topic`, etc., if you renamed them). With **`perception_segmented_cloud_depth_shading`**, the segmented cloud encodes smoothed forward depth in brightness; enable **`publish_closest_surface_markers`** to add closest-surface spheres on the obstacle `MarkerArray` topic (marker namespace **`lidar_obstacle_closest_surface`**).
 
 ---
 

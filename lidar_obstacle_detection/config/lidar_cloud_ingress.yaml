@@ -238,6 +238,20 @@ lidar_cloud_ingress:
     # set a fixed unit direction (e.g. [0,0,1]) when the floor normal is known a priori.
     perception_reference_normal_xyz: [0.0, 0.0, 0.0]
 
+    # YZ column size (m) for robust forward-X (depth) per column and closest-surface point.
+    # <= 0 disables binning (raw min-X point; shading uses raw X per point).
+    yz_depth_bin_size_m: 0.05
+
+    # Minimum points in a YZ bin to use yz_depth_percentile on X; else raw X for that point.
+    yz_depth_min_points: 3
+
+    # Low percentile of X in each qualifying YZ bin (toward the robot-facing surface).
+    yz_depth_percentile: 8.0
+
+    # Modulate segmented obstacle RGB brightness by YZ-smoothed forward X (closer = brighter).
+    # Requires publish_colored_segmented_cloud: true. Default false to save CPU.
+    perception_segmented_cloud_depth_shading: true
+
     # Publish sensor_msgs/PointCloud2 with x,y,z,rgba (cluster colors). High bandwidth;
     # default false for robot — set true for RViz debugging.
     publish_colored_segmented_cloud: true
@@ -247,9 +261,13 @@ lidar_cloud_ingress:
     publish_obstacle_markers: true
     obstacle_markers_topic: "/lidar_obstacle_detection/obstacle_markers"
 
+    # SPHERE markers at YZ-smoothed closest surface points (namespace lidar_obstacle_closest_surface).
+    publish_closest_surface_markers: true
+
     # lidar_obstacle_detection_msgs/ObstacleList: std_msgs/Header (frame_id = output_cloud_frame_id)
     # plus obstacles[]: AABB center (position), width/height/length, volume,
-    # surface_normals[0] = binned-median ground normal under scaled XY footprint when valid.
+    # surface_normals[0] = binned-median ground normal under scaled XY footprint when valid,
+    # closest_surface_point = YZ-binned robust minimum-X surface sample (NaN if invalid).
     publish_obstacle_list: true
     obstacle_list_topic: "/lidar_obstacle_detection/obstacle_list"
 

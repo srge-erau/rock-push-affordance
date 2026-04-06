@@ -44,6 +44,10 @@ class SurfaceObstacleParams:
     surface_normal_bin_deg: float = 10.0
     up_axis: tuple[float, float, float] = (0.0, 0.0, 1.0)
     reference_normal_xyz: tuple[float, float, float] | None = None
+    yz_depth_bin_size_m: float = 0.15
+    yz_depth_min_points: int = 3
+    yz_depth_percentile: float = 8.0
+    segmented_cloud_depth_shading: bool = False
 
 
 @dataclass
@@ -56,6 +60,7 @@ class ObstacleDetection:
     center: np.ndarray
     median_surface_normal: np.ndarray
     normal_anchor: np.ndarray
+    closest_surface_point: np.ndarray
 
 
 @dataclass
@@ -66,6 +71,7 @@ class SegmentationResult:
     normals: np.ndarray
     labels: np.ndarray
     obstacles: list[ObstacleDetection]
+    forward_x_smoothed: np.ndarray | None = None
 
 
 def _unit(v: np.ndarray) -> np.ndarray:
@@ -100,6 +106,99 @@ def orient_normals_upward(
     dots = out @ up_v
     out[dots < 0.0] *= -1.0
     return out
+
+
+def yz_binned_closest_and_smooth_x(
+    cluster_xyz: np.ndarray,
+    *,
+    bin_size_m: float,
+    min_points: int,
+    percentile: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    YZ-bin robust forward X per point and a representative closest-surface point.
+
+    In ``base_link``-style frames (+X forward), smaller X is closer. Each non-empty
+    (Y, Z) column uses a low percentile of X when the bin has at least
+    ``min_points`` samples; otherwise that point keeps its raw X. The returned
+    closest point is chosen from the bin with the smallest robust X among qualifying
+    bins (point whose X is nearest that robust value). If binning is disabled
+    (``bin_size_m <= 0``) or no bin qualifies, falls back to the raw minimum-X point.
+
+    Returns
+    -------
+    closest_point : ndarray
+        Shape (3,), float64. NaN if ``cluster_xyz`` is empty.
+    smooth_x_per_point : ndarray
+        Shape (M,), float64, same row order as ``cluster_xyz``.
+
+    """
+    xyz = np.asarray(cluster_xyz, dtype=np.float64)
+    if xyz.ndim != 2 or xyz.shape[1] != 3:
+        raise ValueError('cluster_xyz must be (M, 3)')
+    m = xyz.shape[0]
+    nan3 = np.array([np.nan, np.nan, np.nan], dtype=np.float64)
+    if m == 0:
+        return nan3, np.zeros((0,), dtype=np.float64)
+
+    x = xyz[:, 0]
+    y = xyz[:, 1]
+    z = xyz[:, 2]
+    pct = float(np.clip(percentile, 0.0, 100.0))
+    mp = int(max(1, min_points))
+
+    if float(bin_size_m) <= 0.0:
+        imin = int(np.argmin(x))
+        closest = xyz[imin].copy()
+        return closest, x.copy()
+
+    y_min, y_max = float(np.min(y)), float(np.max(y))
+    z_min, z_max = float(np.min(z)), float(np.max(z))
+    bs = float(bin_size_m)
+    eps = 1e-12
+    span_y = y_max - y_min
+    span_z = z_max - z_min
+    ny = max(1, int(np.ceil((span_y + eps) / bs)))
+    nz = max(1, int(np.ceil((span_z + eps) / bs)))
+
+    if span_y < eps:
+        iy = np.zeros(m, dtype=np.int64)
+    else:
+        iy = np.floor((y - y_min) / bs).astype(np.int64)
+        iy = np.clip(iy, 0, ny - 1)
+
+    if span_z < eps:
+        iz = np.zeros(m, dtype=np.int64)
+    else:
+        iz = np.floor((z - z_min) / bs).astype(np.int64)
+        iz = np.clip(iz, 0, nz - 1)
+
+    bin_key = iy * nz + iz
+    unique_keys, inverse, counts = np.unique(bin_key, return_inverse=True, return_counts=True)
+    n_bins = int(unique_keys.shape[0])
+    smooth_x = x.copy()
+    robust_fill = np.full(n_bins, np.inf, dtype=np.float64)
+
+    for i in range(n_bins):
+        mask_i = inverse == i
+        ni = int(np.count_nonzero(mask_i))
+        if ni >= mp:
+            rx = float(np.percentile(x[mask_i], pct))
+            smooth_x[mask_i] = rx
+            robust_fill[i] = rx
+
+    if not np.any(np.isfinite(robust_fill) & (robust_fill < np.inf)):
+        imin = int(np.argmin(x))
+        return xyz[imin].copy(), smooth_x
+
+    best_i = int(np.argmin(robust_fill))
+    best_rx = float(robust_fill[best_i])
+    mask_b = inverse == best_i
+    sub_x = x[mask_b]
+    sub_xyz = xyz[mask_b]
+    j_loc = int(np.argmin(np.abs(sub_x - best_rx)))
+    closest = sub_xyz[j_loc].copy()
+    return closest, smooth_x
 
 
 def _label_colors(
@@ -146,10 +245,58 @@ def _label_colors(
     return r, g, b, a
 
 
+def _apply_forward_x_shading(
+    labels: np.ndarray,
+    forward_x_smoothed: np.ndarray,
+    r: np.ndarray,
+    g: np.ndarray,
+    b: np.ndarray,
+    *,
+    shade_min: float = 0.35,
+    shade_max: float = 1.0,
+) -> None:
+    """
+    Modulate obstacle cluster RGB by per-point smoothed forward X (in-place).
+
+    Per cluster, normalized depth uses finite smoothed X only; smaller X (closer)
+    maps to higher brightness. Ground and noise labels are unchanged.
+    """
+    labels = np.asarray(labels, dtype=np.int32).reshape(-1)
+    xs = np.asarray(forward_x_smoothed, dtype=np.float64).reshape(-1)
+    if xs.shape[0] != labels.shape[0]:
+        raise ValueError('forward_x_smoothed length must match labels')
+    eps = 1e-6
+    smin = float(shade_min)
+    smax = float(shade_max)
+    for cid in np.unique(labels):
+        if cid < 1:
+            continue
+        m = labels == cid
+        if not np.any(m):
+            continue
+        xv = xs[m]
+        finite = np.isfinite(xv)
+        if not np.any(finite):
+            continue
+        x_lo = float(np.min(xv[finite]))
+        x_hi = float(np.max(xv[finite]))
+        denom = x_hi - x_lo + eps
+        t = (xv - x_lo) / denom
+        t = np.clip(t, 0.0, 1.0)
+        mult = smax - (smax - smin) * t
+        mult[~finite] = 1.0
+        r[m] = np.clip(r[m].astype(np.float64) * mult, 0.0, 255.0).astype(np.uint32)
+        g[m] = np.clip(g[m].astype(np.float64) * mult, 0.0, 255.0).astype(np.uint32)
+        b[m] = np.clip(b[m].astype(np.float64) * mult, 0.0, 255.0).astype(np.uint32)
+
+
 def build_xyz_rgba_pointcloud2(
     header: Header,
     xyz: np.ndarray,
     labels: np.ndarray,
+    *,
+    forward_x_smoothed: np.ndarray | None = None,
+    depth_shading: bool = False,
 ) -> PointCloud2:
     """Build ``PointCloud2`` with float32 xyz + uint32 rgba (cluster colors)."""
     xyz = np.asarray(xyz, dtype=np.float32)
@@ -160,6 +307,10 @@ def build_xyz_rgba_pointcloud2(
         raise ValueError('labels length must match number of points')
 
     rr, gg, bb, aa = _label_colors(labels)
+    if depth_shading:
+        if forward_x_smoothed is None:
+            raise ValueError('forward_x_smoothed is required when depth_shading is True')
+        _apply_forward_x_shading(labels, forward_x_smoothed, rr, gg, bb)
     rgba = rr | (gg << 8) | (bb << 16) | (aa << 24)
     rgba = rgba.astype(np.uint32)
 
@@ -310,7 +461,11 @@ def segment_surface_obstacles(
     -------
     SegmentationResult
         Per-point normals and labels plus one :class:`ObstacleDetection` per
-        DBSCAN cluster (excluding noise).
+        DBSCAN cluster (excluding noise). Each obstacle includes
+        ``closest_surface_point`` (YZ-binned robust minimum-X sample). When
+        ``params.segmented_cloud_depth_shading`` is true, ``forward_x_smoothed``
+        is an (N,) array (NaN on ground/noise) for debug cloud shading; otherwise
+        it is None.
 
     """
     xyz = np.asarray(xyz, dtype=np.float64)
@@ -323,6 +478,7 @@ def segment_surface_obstacles(
             normals=np.zeros((0, 3), dtype=np.float64),
             labels=np.zeros((0,), dtype=np.int32),
             obstacles=[],
+            forward_x_smoothed=None,
         )
 
     pcd = o3d.geometry.PointCloud()
@@ -350,8 +506,19 @@ def segment_surface_obstacles(
     labels[ground_mask] = LABEL_GROUND
 
     obstacles: list[ObstacleDetection] = []
+    forward_full: np.ndarray | None = (
+        np.full(n_pts, np.nan, dtype=np.float64)
+        if bool(params.segmented_cloud_depth_shading)
+        else None
+    )
     if np.count_nonzero(obstacle_mask) == 0:
-        return SegmentationResult(points=xyz, normals=normals, labels=labels, obstacles=[])
+        return SegmentationResult(
+            points=xyz,
+            normals=normals,
+            labels=labels,
+            obstacles=[],
+            forward_x_smoothed=forward_full,
+        )
 
     obj_idx = np.flatnonzero(obstacle_mask)
     obj_xyz = xyz[obstacle_mask]
@@ -402,6 +569,15 @@ def segment_surface_obstacles(
             float(params.surface_normal_bin_deg),
         )
 
+        closest_pt, smooth_local = yz_binned_closest_and_smooth_x(
+            cluster_xyz,
+            bin_size_m=float(params.yz_depth_bin_size_m),
+            min_points=int(params.yz_depth_min_points),
+            percentile=float(params.yz_depth_percentile),
+        )
+        if forward_full is not None:
+            forward_full[global_idx] = smooth_local
+
         obstacles.append(
             ObstacleDetection(
                 cluster_id=int(cid),
@@ -410,7 +586,14 @@ def segment_surface_obstacles(
                 center=np.asarray(center, dtype=np.float64),
                 median_surface_normal=med_surf_n,
                 normal_anchor=anchor,
+                closest_surface_point=np.asarray(closest_pt, dtype=np.float64),
             ),
         )
 
-    return SegmentationResult(points=xyz, normals=normals, labels=labels, obstacles=obstacles)
+    return SegmentationResult(
+        points=xyz,
+        normals=normals,
+        labels=labels,
+        obstacles=obstacles,
+        forward_x_smoothed=forward_full,
+    )

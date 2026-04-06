@@ -13,7 +13,7 @@ Full pipeline documentation, default topics, and the **algorithm parameter file*
 
 | File | Description |
 |------|-------------|
-| `msg/Obstacle.msg` | One obstacle: AABB center `geometry_msgs/Point position`; extents `width`, `height`, `length` (m); `volume` (m³); `geometry_msgs/Vector3[] surface_normals` (typically one unit normal from ground under the XY footprint). |
+| `msg/Obstacle.msg` | One obstacle: AABB center `geometry_msgs/Point position`; extents `width`, `height`, `length` (m); `volume` (m³); `geometry_msgs/Vector3[] surface_normals` (typically one unit normal from ground under the XY footprint); `geometry_msgs/Point closest_surface_point` (YZ-binned robust minimum-X surface sample in the same frame as `position`; NaN components if invalid). |
 | `msg/ObstacleList.msg` | `std_msgs/Header header` (use `output_cloud_frame_id`, e.g. `base_link`) + `Obstacle[] obstacles`. |
 
 Dependencies: `geometry_msgs`, `std_msgs`.

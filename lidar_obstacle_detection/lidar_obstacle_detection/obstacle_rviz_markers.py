@@ -129,21 +129,66 @@ def _normal_arrow_marker(
     return marker
 
 
+def _closest_surface_sphere_marker(
+    frame_id: str,
+    stamp: Time,
+    namespace: str,
+    marker_id: int,
+    center: np.ndarray,
+    diameter: float,
+    r: float,
+    g: float,
+    b: float,
+) -> Marker:
+    c = np.asarray(center, dtype=np.float64).reshape(3)
+    marker = Marker()
+    marker.header.frame_id = frame_id
+    marker.header.stamp = stamp
+    marker.ns = namespace
+    marker.id = int(marker_id)
+    if not np.all(np.isfinite(c)):
+        marker.action = Marker.DELETE
+        return marker
+    marker.type = Marker.SPHERE
+    marker.action = Marker.ADD
+    d = float(diameter)
+    marker.scale.x = d
+    marker.scale.y = d
+    marker.scale.z = d
+    marker.color.r = float(r)
+    marker.color.g = float(g)
+    marker.color.b = float(b)
+    marker.color.a = 1.0
+    marker.pose.position.x = float(c[0])
+    marker.pose.position.y = float(c[1])
+    marker.pose.position.z = float(c[2])
+    marker.pose.orientation.w = 1.0
+    return marker
+
+
 def build_obstacle_marker_array(
     frame_id: str,
     stamp: Time,
     obstacles: list[ObstacleDetection],
     normal_arrow_length: float = 0.35,
     box_line_width: float = 0.02,
+    *,
+    show_closest_surface_points: bool = False,
+    closest_sphere_diameter: float = 0.05,
 ) -> MarkerArray:
     """
     One DELETEALL per namespace, then LINE_LIST AABBs and ARROW surface normals.
 
-    Namespaces: ``lidar_obstacle_boxes``, ``lidar_obstacle_surface_normals``.
+    Namespaces: ``lidar_obstacle_boxes``, ``lidar_obstacle_surface_normals``;
+    optional ``lidar_obstacle_closest_surface`` (SPHERE per obstacle).
     """
     arr = MarkerArray()
     arr.markers.append(_delete_all_marker(frame_id, stamp, 'lidar_obstacle_boxes'))
     arr.markers.append(_delete_all_marker(frame_id, stamp, 'lidar_obstacle_surface_normals'))
+    if show_closest_surface_points:
+        arr.markers.append(
+            _delete_all_marker(frame_id, stamp, 'lidar_obstacle_closest_surface'),
+        )
 
     for o in obstacles:
         bid = int(o.cluster_id)
@@ -175,4 +220,18 @@ def build_obstacle_marker_array(
                 0.1,
             ),
         )
+        if show_closest_surface_points:
+            arr.markers.append(
+                _closest_surface_sphere_marker(
+                    frame_id,
+                    stamp,
+                    'lidar_obstacle_closest_surface',
+                    bid,
+                    o.closest_surface_point,
+                    closest_sphere_diameter,
+                    1.0,
+                    0.2,
+                    0.9,
+                ),
+            )
     return arr

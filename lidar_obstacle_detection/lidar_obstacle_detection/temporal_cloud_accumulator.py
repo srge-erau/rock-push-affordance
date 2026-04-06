@@ -83,6 +83,7 @@ def postprocess_merged_xyz(
         If > 0, Open3D voxel downsample with this leaf size.
     max_merged_points
         If > 0, uniform subsample to this many points after voxel step.
+
     """
     out = np.asarray(xyz, dtype=np.float64)
     if out.size == 0:
@@ -118,9 +119,7 @@ class TemporalPointCloudAccumulator:
         self._push_count = 0
 
     def push(self, xyz: np.ndarray) -> None:
-        """
-        Append one scan. Empty scans are stored as (0, 3) so stride/timing stay consistent.
-        """
+        """Append one scan; empty scans stored as (0, 3) for consistent stride."""
         arr = np.asarray(xyz, dtype=np.float64)
         if arr.ndim != 2 or arr.shape[1] != 3:
             raise ValueError(f'xyz must be (N, 3), got shape {arr.shape}')
@@ -148,7 +147,7 @@ class TemporalPointCloudAccumulator:
         return np.vstack(parts)
 
     def should_publish_after_last_push(self) -> bool:
-        """True if the current ``push_count`` matches the publish stride."""
+        """Return whether ``push_count`` matches the publish stride."""
         k = self._params.publish_every_n_inputs
         if k <= 1:
             return True
@@ -156,7 +155,7 @@ class TemporalPointCloudAccumulator:
 
     def merged_output_xyz(self) -> np.ndarray:
         """
-        Merged cloud after :func:`postprocess_merged_xyz` (voxel + max points).
+        Return merged cloud after :func:`postprocess_merged_xyz` (voxel + max points).
 
         Call after ``push`` when ``should_publish_after_last_push()`` is true, or anytime
         for debugging.

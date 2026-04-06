@@ -44,5 +44,10 @@ def build_obstacle_list_msg(
             msg.surface_normals.append(
                 Vector3(x=float(vn[0]), y=float(vn[1]), z=float(vn[2])),
             )
+        cp = o.closest_surface_point.astype(np.float64).reshape(3)
+        if np.all(np.isfinite(cp)):
+            msg.closest_surface_point = Point(x=float(cp[0]), y=float(cp[1]), z=float(cp[2]))
+        else:
+            msg.closest_surface_point = Point(x=float('nan'), y=float('nan'), z=float('nan'))
         out.obstacles.append(msg)
     return out

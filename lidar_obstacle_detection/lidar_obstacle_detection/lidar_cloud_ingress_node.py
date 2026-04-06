@@ -3,9 +3,9 @@ ROS 2 node: driver PointCloud2 → ``base_link`` cloud (single entry).
 
 Pipeline per message: **rigid transform** into ``output_cloud_frame_id`` → **forward
 FOV / depth / optional height, lateral corridor, min forward-x crop** (see
-``base_link_spatial_filter``) → **voxel downsample** → optional **temporal merge** of the last N scans (see
-``temporal_cloud_accumulator``) → publish ``sensor_msgs/PointCloud2`` (xyz32) on
-``output_topic``.
+``base_link_spatial_filter``) → **voxel downsample** → optional **temporal merge**
+of the last N scans (see ``temporal_cloud_accumulator``) → publish
+``sensor_msgs/PointCloud2`` (xyz32) on ``output_topic``.
 
 Optional **perception** (``surface_obstacle_segmentation``): normals oriented to
 ``perception_up_axis``, cosine split vs. dominant surface, DBSCAN clusters; colored
@@ -153,7 +153,10 @@ class LidarCloudIngressNode(Node):
             'output_cloud_qos_reliability',
             'reliable',
             descriptor=ParameterDescriptor(
-                description='Filtered cloud publisher: reliable for recorders; best_effort to mimic sensors.',
+                description=(
+                    'Filtered cloud publisher: reliable for recorders; '
+                    'best_effort to mimic sensors.'
+                ),
             ),
         )
         self.declare_parameter(
@@ -252,6 +255,40 @@ class LidarCloudIngressNode(Node):
         self.declare_parameter('perception_up_axis', [0.0, 0.0, 1.0])
         self.declare_parameter('perception_reference_normal_xyz', [0.0, 0.0, 0.0])
         self.declare_parameter(
+            'yz_depth_bin_size_m',
+            0.15,
+            descriptor=ParameterDescriptor(
+                description=(
+                    'YZ column width (m) for robust minimum-X / depth smoothing. '
+                    '<= 0 disables binning (raw min-X closest point; per-point X for shading).'
+                ),
+            ),
+        )
+        self.declare_parameter(
+            'yz_depth_min_points',
+            3,
+            descriptor=ParameterDescriptor(
+                description='Minimum points in a YZ bin to use percentile-X; else raw X.',
+            ),
+        )
+        self.declare_parameter(
+            'yz_depth_percentile',
+            8.0,
+            descriptor=ParameterDescriptor(
+                description='Low percentile of X per YZ bin toward the forward-facing surface.',
+            ),
+        )
+        self.declare_parameter(
+            'perception_segmented_cloud_depth_shading',
+            False,
+            descriptor=ParameterDescriptor(
+                description=(
+                    'If true, segmented obstacle colors are brightness-modulated by YZ-smoothed '
+                    'forward X (closer = brighter). Requires publish_colored_segmented_cloud.'
+                ),
+            ),
+        )
+        self.declare_parameter(
             'publish_colored_segmented_cloud',
             False,
             descriptor=ParameterDescriptor(
@@ -261,6 +298,16 @@ class LidarCloudIngressNode(Node):
         self.declare_parameter(
             'colored_segmented_cloud_topic',
             '/lidar_obstacle_detection/cloud_segmented',
+        )
+        self.declare_parameter(
+            'publish_closest_surface_markers',
+            False,
+            descriptor=ParameterDescriptor(
+                description=(
+                    'If true with publish_obstacle_markers, add SPHERE markers at YZ-smoothed '
+                    'closest surface points (namespace lidar_obstacle_closest_surface).'
+                ),
+            ),
         )
         self.declare_parameter(
             'publish_obstacle_markers',
@@ -422,7 +469,8 @@ class LidarCloudIngressNode(Node):
         )
         self.get_logger().info(
             f'ROS graph (ingress): subscribe PointCloud2 {self._in_topic!r} '
-            f'qos={in_rel!r} depth={in_d}; publish {self._out_topic!r} qos={out_rel!r} depth={out_d}.',
+            f'qos={in_rel!r} depth={in_d}; publish {self._out_topic!r} '
+            f'qos={out_rel!r} depth={out_d}.',
         )
         self.get_logger().info(
             f'Ingress: transform + FOV/downsample → {self._output_frame!r}; '
@@ -476,6 +524,12 @@ class LidarCloudIngressNode(Node):
             surface_normal_bin_deg=float(self.get_parameter('surface_normal_bin_deg').value),
             up_axis=(float(up[0]), float(up[1]), float(up[2])),
             reference_normal_xyz=ref,
+            yz_depth_bin_size_m=float(self.get_parameter('yz_depth_bin_size_m').value),
+            yz_depth_min_points=int(self.get_parameter('yz_depth_min_points').value),
+            yz_depth_percentile=float(self.get_parameter('yz_depth_percentile').value),
+            segmented_cloud_depth_shading=bool(
+                self.get_parameter('perception_segmented_cloud_depth_shading').value,
+            ),
         )
 
     def _spatial_params(self) -> SpatialFilterParams:
@@ -640,7 +694,14 @@ class LidarCloudIngressNode(Node):
 
         pub_seg = self._ensure_segmented_cloud_publisher()
         if pub_seg is not None:
-            colored = build_xyz_rgba_pointcloud2(header, seg.points, seg.labels)
+            fx = seg.forward_x_smoothed
+            colored = build_xyz_rgba_pointcloud2(
+                header,
+                seg.points,
+                seg.labels,
+                forward_x_smoothed=fx,
+                depth_shading=fx is not None,
+            )
             pub_seg.publish(colored)
 
         stamp = header.stamp
@@ -655,6 +716,9 @@ class LidarCloudIngressNode(Node):
                 ),
                 box_line_width=float(
                     self.get_parameter('obstacle_box_line_width').value,
+                ),
+                show_closest_surface_points=bool(
+                    self.get_parameter('publish_closest_surface_markers').value,
                 ),
             )
             pub_markers.publish(arr)

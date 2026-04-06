@@ -21,7 +21,7 @@ def make_volatile_qos(
     reliability: ReliabilityPolicy,
     depth: int,
 ) -> QoSProfile:
-    """Standard volatile KEEP_LAST profile (typical sensor / pipeline topics)."""
+    """Build a volatile KEEP_LAST profile (typical sensor / pipeline topics)."""
     d = int(depth)
     if d < 1:
         raise ValueError(f'QoS depth must be >= 1, got {depth}')

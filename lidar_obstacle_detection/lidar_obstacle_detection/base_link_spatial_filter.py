@@ -65,7 +65,8 @@ def _validate_params(params: SpatialFilterParams) -> None:
         raise ValueError(f'max_lateral must be positive when set, got {params.max_lateral!r}')
     if params.min_forward_distance is not None and params.min_forward_distance < 0.0:
         raise ValueError(
-            f'min_forward_distance must be non-negative when set, got {params.min_forward_distance!r}',
+            'min_forward_distance must be non-negative when set, got '
+            f'{params.min_forward_distance!r}',
         )
 
 
@@ -95,6 +96,7 @@ def mask_forward_cheesecake_slice(
         so points on or behind the ``x = 0`` plane are dropped.
     min_forward_x
         Used only when ``min_forward_distance`` is ``None``.
+
     """
     if xyz.ndim != 2 or xyz.shape[1] != 3:
         raise ValueError(f'xyz must be (N, 3), got shape {xyz.shape}')
@@ -143,14 +145,17 @@ def filter_and_downsample_xyz(
     min_forward_x: float = 1e-6,
 ) -> np.ndarray:
     """
-    Apply cheesecake slice (+ optional height / lateral / min forward x), then optional
-    voxel downsample when ``params.voxel_size > 0``; otherwise return the sliced cloud
-    unchanged (no per-scan voxel).
+    Apply forward spatial slice and optional voxel downsample.
+
+    Runs cheesecake slice (+ optional height / lateral / min forward x), then
+    optional voxel downsample when ``params.voxel_size > 0``; otherwise returns
+    the sliced cloud unchanged (no per-scan voxel).
 
     Raises
     ------
     ValueError
         If ``params`` are invalid or ``xyz`` is not (N, 3).
+
     """
     _validate_params(params)
     xyz = np.asarray(xyz, dtype=np.float64)
