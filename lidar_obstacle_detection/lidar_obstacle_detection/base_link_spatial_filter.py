@@ -16,7 +16,10 @@ wide left/right returns past the corridor width).
 **min_forward_distance:** optional; when set, drop points with ``x < min_forward_distance``
 (e.g. remove hits on the robot body / mast near ``base_link`` origin).
 
-Order: sector + depth (+ height + lateral + min forward x) → Open3D voxel downsample.
+**Per-scan voxel:** optional. ``voxel_size <= 0`` means no per-scan voxel (spatial slice only);
+``voxel_size > 0`` runs Open3D voxel downsample on the sliced cloud.
+
+Order: sector + depth (+ height + lateral + min forward x) → optional Open3D voxel downsample.
 """
 
 from __future__ import annotations
@@ -39,7 +42,9 @@ class SpatialFilterParams:
     """Keep points with x <= max_depth (forward axis in ``base_link``)."""
 
     voxel_size: float
-    """Open3D voxel grid leaf size (same units as point coordinates, usually meters)."""
+    """Per-scan voxel leaf size (meters, same units as coordinates). In
+    :func:`filter_and_downsample_xyz`, ``<= 0`` disables per-scan voxel; use
+    :func:`voxel_downsample_xyz` only with ``> 0``."""
 
     max_height: Optional[float] = None
     """If not ``None``, drop points with z > max_height."""
@@ -56,8 +61,6 @@ def _validate_params(params: SpatialFilterParams) -> None:
         raise ValueError(f'fov_deg must be in (0, 360], got {params.fov_deg!r}')
     if params.max_depth <= 0.0:
         raise ValueError(f'max_depth must be positive, got {params.max_depth!r}')
-    if params.voxel_size <= 0.0:
-        raise ValueError(f'voxel_size must be positive, got {params.voxel_size!r}')
     if params.max_lateral is not None and params.max_lateral <= 0.0:
         raise ValueError(f'max_lateral must be positive when set, got {params.max_lateral!r}')
     if params.min_forward_distance is not None and params.min_forward_distance < 0.0:
@@ -140,7 +143,9 @@ def filter_and_downsample_xyz(
     min_forward_x: float = 1e-6,
 ) -> np.ndarray:
     """
-    Apply cheesecake slice (+ optional height / lateral / min forward x), then voxel downsample.
+    Apply cheesecake slice (+ optional height / lateral / min forward x), then optional
+    voxel downsample when ``params.voxel_size > 0``; otherwise return the sliced cloud
+    unchanged (no per-scan voxel).
 
     Raises
     ------
@@ -162,4 +167,6 @@ def filter_and_downsample_xyz(
         min_forward_x=min_forward_x,
     )
     sliced = xyz[mask]
+    if params.voxel_size <= 0.0:
+        return sliced
     return voxel_downsample_xyz(sliced, params.voxel_size)

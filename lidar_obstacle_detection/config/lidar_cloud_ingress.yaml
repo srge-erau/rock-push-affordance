@@ -95,17 +95,18 @@ lidar_cloud_ingress:
     # Total horizontal field-of-view in degrees, centered on +X. Half-angle =
     # fov_deg/2 on each side in the XY plane. Points with x <= min_forward_x
     # (tiny epsilon) are dropped as “behind” the robot.
-    fov_deg: 135.0
+    fov_deg: 90.0
 
     # Forward range cap along +X in meters: keep points with x <= max_depth.
     # (Cheap proxy for “distance”; not Euclidean range from origin unless you
     # treat it that way for your layout.)
-    max_depth: 2.0
+    max_depth: 1.0
 
     # Open3D voxel grid leaf size in meters, applied per scan after the sector
-    # (and height) mask. Smaller → more points, more CPU downstream; larger →
-    # sparser cloud.
-    voxel_size: 0.05
+    # (and height) mask. Use 0 (or any <= 0) for no per-scan voxel—only spatial
+    # filtering runs before temporal merge / downstream. When > 0: smaller →
+    # more points, more CPU downstream; larger → sparser cloud.
+    voxel_size: 0.00
 
     # If false, max_height is ignored. If true, drop points with z > max_height
     # (meters, in output_cloud_frame_id) to cap ceiling / overhang clutter.
@@ -132,14 +133,14 @@ lidar_cloud_ingress:
     # Rolling buffer length: concatenate the last N processed scans (after
     # per-scan voxel). Use N > 1 for sparse rotating LiDAR to approximate a
     # denser snapshot. Oldest scans drop when the buffer is full.
-    temporal_n_scans: 5
+    temporal_n_scans: 10
 
     # Publish the merged output only every K-th incoming message (K >= 1).
     # Buffer still updates every callback. K > 1 lowers output topic rate and
     # subscriber load; merged cloud spans the last temporal_n_scans scans at
     # publish time. Set K=1 to publish whenever the node publishes (subject to
     # stride logic inside the node).
-    temporal_publish_every_n_inputs: 1
+    temporal_publish_every_n_inputs: 10
 
     # After merging (and optional merge voxel): if > 0, uniformly subsample to
     # at most this many points. 0 = no cap. Use to bound memory/CPU when N is
@@ -149,7 +150,7 @@ lidar_cloud_ingress:
     # If > 0: run an additional Open3D voxel downsample on the concatenated
     # merged cloud (meters). 0 = skip. Reduces duplicate hits from overlapping
     # scans; independent of per-scan voxel_size.
-    temporal_merge_voxel_size: 0.0
+    temporal_merge_voxel_size: 0.00
 
     # -------------------------------------------------------------------------
     # Visualization-only static TF
@@ -254,4 +255,4 @@ lidar_cloud_ingress:
 
     # RViz arrow length for surface normal; LINE_LIST line width for boxes (meters).
     obstacle_normal_arrow_length: 0.35
-    obstacle_box_line_width: 0.02
+    obstacle_box_line_width: 0.01
