@@ -25,12 +25,15 @@ Stack of two packages in this repository:
 
 ## Build
 
-From your ROS 2 workspace (parent of this `src` tree):
+ROS 2 Humble or newer, `colcon`, and `rosdep` are required. Clone the repository into a workspace's `src` directory, then build both packages:
 
 ```bash
-cd ~/ros2_ws
-rosdep install --from-paths src/object_detection --ignore-src -r -y   # optional; first-time deps
-python3 -m pip install -r src/object_detection/lidar_obstacle_detection/requirements.txt
+mkdir -p ~/ros2_ws/src
+cd ~/ros2_ws/src
+git clone https://github.com/srge-erau/rock-push-affordance.git
+cd ..
+rosdep install --from-paths src --ignore-src -r -y
+python3 -m pip install -r src/rock-push-affordance/lidar_obstacle_detection/requirements.txt
 colcon build --packages-up-to lidar_obstacle_detection --symlink-install
 source install/setup.bash
 ```
@@ -47,6 +50,13 @@ ros2 launch lidar_obstacle_detection lidar_cloud_ingress.launch.py
 - **Headless** (no RViz, e.g. on-robot or SSH): `headless:=true`.
 
 Override parameters file: `ingress_params_file:=/path/to/your.yaml`. Verbose logs: `verbose:=true`.
+
+For a first validation, keep the launch running and inspect interfaces from another sourced terminal:
+
+```bash
+ros2 node info /lidar_cloud_ingress
+ros2 topic list | grep -E 'cloud|obstacle'
+```
 
 ---
 
